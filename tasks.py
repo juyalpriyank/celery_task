@@ -1,12 +1,12 @@
 import logging
-from time import strftime, gmtime
 import json
 import asyncio
-import time
 import rethinkdb as r
 from celery import Celery
 import datetime
 from celery.result import AsyncResult
+import time
+import pytz
 
 with open('config.json', 'r') as f:
     config = json.load(f)
@@ -45,9 +45,11 @@ async def revoke_flag(c_id, conn, revoke_date):
     c_id --> Certificate id of the certificate to be revoked
     conn --> connection to rethinkdb asyncio pool"""
 
-    epoch_revoke_date = r.table('share_assets').filter({'id' : c_id}).pluck('revoked_on').run(conn)[0]['revoked_on']
-    iso_revoke_date = datetime.datetime.utcfromtimestamp(epoch_revoke_date).isoformat()
+    epoch_revoke_date = await (await r.table('share_assets').filter({'id' : c_id}).pluck('revoked_on').run(conn)).next()
+    iso_revoke_date = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(epoch_revoke_date['revoked_on']))
+    
     if iso_revoke_date == revoke_date:
+        #API Call
         return await r.table('share_assets').filter({'id' : c_id}).update({"revoked_flag" : 1}).run(conn)
     return
 
@@ -67,7 +69,9 @@ async def change_feed_filter():
     while (await feed.fetch_next()):
         change = await feed.next()
         c_id = change['new_val']['id']
-        revoke_date = datetime.datetime.utcfromtimestamp(change['new_val']['revoked_on']).isoformat()
+        tz = pytz.timezone('Asia/Kolkata')
+        revoke_date = datetime.datetime.fromtimestamp(change['new_val']['revoked_on'], tz)
+#        revoke_date = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(change['new_val']['revoked_on']))
         revoked_flag_new = change['new_val']['revoked_flag']
         try:
 
@@ -76,11 +80,11 @@ async def change_feed_filter():
                 #if any entry in the table is updated other than revoke flags
                 pass
             else:
-                task_res = revoke_certi_task.apply_async((c.id,),eta=revoke_date)
+                task_res = revoke_certi_task.apply_async((c_id,revoke_date),eta=revoke_date)
                 await task_status_logging(task_res.id, revoke_date)
 
         except KeyError:
-            task_res = revoke_certi_task.apply_async((c_id,revoke_date,),eta=revoke_date)
+            task_res = revoke_certi_task.apply_async((c_id,revoke_date),eta=revoke_date)
             await task_status_logging(task_res.id, revoke_date)
        
 async def task_status_logging(task_id, revoke_date):
