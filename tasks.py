@@ -35,7 +35,7 @@ def revoke_certi_task(c_id, revoke_date):
     loop2 = asyncio.get_event_loop()
     task2 = loop2.create_task(revoke_flag(c_id, conn, revoke_date))
     loop2.run_until_complete(task2)
-    
+
 
 async def connection():
     """The function establishes a rethinkdb connection to server Asynchronously."""
@@ -50,16 +50,15 @@ async def revoke_flag(c_id, conn, revoke_date):
 
     epoch_revoke_date = await (await r.table('share_assets').filter({'id' : c_id}).pluck('revoked_on').run(conn)).next()
     iso_revoke_date = datetime.datetime.fromtimestamp(epoch_revoke_date['revoked_on'], tz)
-    print (iso_revoke_date)
-    print (revoke_date)
-    if iso_revoke_date == revoke_date:
+    if epoch_revoke_date['revoked_on'] == revoke_date:
         print ('API Call')
         #API Call
         return await r.table('share_assets').filter({'id' : c_id}).update({"revoked_flag" : 1}).run(conn)
 #        return await r.table(db_config['revoke_table']).filter({'c_id' : c_id}).update({"revoked_flag" : "1"}).run(conn)
 
     else:
-        task_res = revoke_certi_task.apply_async((c_id,revoke_date),eta=iso_revoke_date)
+        print ('API call else')
+        task_res = revoke_certi_task.apply_async((c_id, epoch_revoke_date['revoked_on']),eta=iso_revoke_date)
         await task_status_logging(task_res.id, iso_revoke_date)
 
 async def change_feed_filter():
@@ -70,29 +69,22 @@ async def change_feed_filter():
     feed = await r.table('share_assets').has_fields('revoked_on').changes().run(conn)
 #    feed = await r.table(db_config['revoke_table']).has_fields('revoked_on').changes().run(conn)
 
-    #TODO:Add filter for new entry only(old_val.eq()=None)
-    #TODO:Add filter for updated entry aswell
-    #TODO:Check if the revoked flag is already revoked.
     while (await feed.fetch_next()):
         change = await feed.next()
-        c_id = change['new_val']['id']       
+        c_id = change['new_val']['id']
         revoke_date = datetime.datetime.fromtimestamp(change['new_val']['revoked_on'], tz)
-#        revoke_date = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(change['new_val']['revoked_on']))
         revoked_flag_new = change['new_val']['revoked_flag']
         try:
 
             revoked_flag_old = change['old_val']['revoked_flag']
-#            if (revoked_flag_new == 1 and revoked_flag_old == 1) or (revoked_flag_new == 0 and revoked_flag_old == 0) or (revoked_flag_new == 1 and revoked_flag_old == 0):
-                #if any entry in the table is updated other than revoke flags
-#                pass
             if (revoked_flag_new == 0 and revoked_flag_old == 1):
-                task_res = revoke_certi_task.apply_async((c_id,revoke_date),eta=revoke_date)
+                task_res = revoke_certi_task.apply_async((c_id,change['new_val']['revoked_on']),eta=revoke_date)
                 await task_status_logging(task_res.id, revoke_date)
 
         except KeyError:
-            task_res = revoke_certi_task.apply_async((c_id,revoke_date),eta=revoke_date)
+            task_res = revoke_certi_task.apply_async((c_id,change['new_val']['revoked_on']),eta=revoke_date)
             await task_status_logging(task_res.id, revoke_date)
-       
+
 async def task_status_logging(task_id, revoke_date):
     res = AsyncResult(task_id, app = app)
     logging.info('X----------X------------TASK----------------X-----------X')
