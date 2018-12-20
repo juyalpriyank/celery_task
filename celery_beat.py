@@ -30,7 +30,8 @@ async def scan_db(conn):
     now = datetime.now()
     hour_from_now = timedelta(hours=1) + now
     hour_before_now = now - timedelta(hours=1)
-    #TODO:Check for past 1 hour for confirmation
+    #TODO:Check for past 1 hour for confirmation.
+    #TODO:Sort the certificates to be revoked in an hour based on their respective epoch and set priority.
     print ('hour from now', hour_from_now.date())
     collections = await r.table('share_assets').run(conn)
     while (await collections.fetch_next()):
