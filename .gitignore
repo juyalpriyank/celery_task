@@ -2,3 +2,5 @@
 *.log
 celerybeat-schedule
 .ycm_extra_conf.py
+*.swp
+*.pyc

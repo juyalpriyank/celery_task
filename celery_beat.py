@@ -34,12 +34,16 @@ async def scan_db(conn):
     #TODO:Sort the certificates to be revoked in an hour based on their respective epoch and set priority.
     print ('hour from now', hour_from_now.date())
     collections = await r.table('share_assets').run(conn)
+    to_be_revoked_certs = []
     while (await collections.fetch_next()):
         item = await collections.next()
         epoch_of_revoking = item['revoked_on']
         datetime_of_revoking = datetime.fromtimestamp(epoch_of_revoking, tz)
         print ('date of revoking', datetime_of_revoking.date())
+        keys = ['revoked_on', 'id']
         if int(epoch_of_revoking) in range (int(now.timestamp()), int(hour_from_now.timestamp())):
+            to_be_revoked_dict = dict((k, item[k]) for k in keys)
+            to_be_revoked_certs.append(to_be_revoked_dict)
             #API Call
             print('Falls in 1 hour range')
             task_res = revoke_certi_task.apply_async((item['id'], epoch_of_revoking), eta=datetime_of_revoking)
@@ -52,6 +56,11 @@ async def scan_db(conn):
                 print('unrevoked certificate with cid',item['id'])
                 task_res = revoke_certi_task.apply_async((item['id'], epoch_of_revoking), eta=datetime_of_revoking)
                 await task_status_logging(task_res.id, datetime_of_revoking)
+    print(to_be_revoked_certs)
+    try:
+        for _dict in to_be_revoked_certs:
+
+
 
 
 @app.task
