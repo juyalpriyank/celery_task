@@ -6,8 +6,9 @@ from datetime import datetime, timedelta
 import pytz
 from celery.result import AsyncResult
 import logging
+from kombu import Queue, Exchange
 
-app = Celery('celery_beat', broker='amqp://guest:guest@localhost:5672//', backend='rpc://')
+app = Celery('celery_beat', broker='amqp://guest:guest@localhost:5672//', backend='rpc://',CELERY_DEFAULT_QUEUE='high_priority',CELERY_QUEUES=(Queue('high_priority'),Queue('mid_priority'), Queue('low_priority')))
 r.set_loop_type('asyncio')
 
 tz = pytz.timezone('Asia/Kolkata')
@@ -18,6 +19,7 @@ async def connection():
 @app.task
 def check_for_revoke():
     print('started')
+    print('printing queues',app.conf.task_queues[1])
     loop = asyncio.get_event_loop()
     task = loop.create_task(connection())
     conn = loop.run_until_complete(task)
@@ -30,6 +32,9 @@ async def scan_db(conn):
     now = datetime.now()
     hour_from_now = timedelta(hours=1) + now
     hour_before_now = now - timedelta(hours=1)
+    high_priority = now + timedelta(minutes=20)
+    mid_priority = high_priority + timedelta(minutes=20)
+    low_priority = mid_priority + timedelta(minutes=20)
     #TODO:Check for past 1 hour for confirmation.
     #TODO:Sort the certificates to be revoked in an hour based on their respective epoch and set priority.
     print ('hour from now', hour_from_now.date())
@@ -46,22 +51,37 @@ async def scan_db(conn):
             to_be_revoked_certs.append(to_be_revoked_dict)
             #API Call
             print('Falls in 1 hour range')
-            task_res = revoke_certi_task.apply_async((item['id'], epoch_of_revoking), eta=datetime_of_revoking)
-            await task_status_logging(task_res.id, datetime_of_revoking)
+#            task_res = revoke_certi_task.apply_async((item['id'], epoch_of_revoking), eta=datetime_of_revoking)
+#            await task_status_logging(task_res.id, datetime_of_revoking)
         if int(epoch_of_revoking) in range(int(hour_before_now.timestamp()), int(hour_from_now.timestamp())):
             if item['revoked_flag'] == 1:
                 print('revoked certificate an hour ago with cid', item['id'])
 
             else:
                 print('unrevoked certificate with cid',item['id'])
-                task_res = revoke_certi_task.apply_async((item['id'], epoch_of_revoking), eta=datetime_of_revoking)
-                await task_status_logging(task_res.id, datetime_of_revoking)
+#                task_res = revoke_certi_task.apply_async((item['id'], epoch_of_revoking), eta=datetime_of_revoking)
+#                await task_status_logging(task_res.id, datetime_of_revoking)
     print(to_be_revoked_certs)
     try:
         for _dict in to_be_revoked_certs:
+            datetime_of_revoking = datetime.fromtimestamp(_dict['revoked_on'], tz)
+            if int(_dict['revoked_on']) in range(int(now.timestamp()), int(high_priority.timestamp())):
+                print('High Priority')
+                task_res = revoke_certi_task.apply_async((_dict['id'], _dict['revoked_on']), eta=datetime_of_revoking, queue=app.conf.task_queues[0])
+#                await task_status_logging(task_res.id, datetime_of_revoking)
 
+            if int(_dict['revoked_on']) in range(int(high_priority.timestamp()), int(mid_priority.timestamp())):
+                print('Mid Priority')
+                task_res = revoke_certi_task.apply_async((_dict['id'],_dict['revoked_on']), eta=datetime_of_revoking, queue=app.conf.task_queues[1])
+#                await task_status_logging(task_res.id, datetime_of_revoking)
 
+            if int(_dict['revoked_on']) in range(int(mid_priority.timestamp()), int(low_priority.timestamp())):
+                print('Low Priority')
+                task_res = revoke_certi_task.apply_async((_dict['id'], _dict['revoked_on']), eta=datetime_of_revoking, queue=app.conf.task_queues[2])
+#                await task_status_logging(task_res.id, datetime_of_revoking)
 
+    except TypeError as e:
+        print ('to_be_revoked_certs list is empty',e)
 
 @app.task
 def revoke_certi_task(c_id, revoke_date):
@@ -114,3 +134,11 @@ app.conf.beat_schedule = {
     }
 }
 
+app.conf.task_queues = (
+    Queue('high_priority', Exchange('high_priority'), routing_key='high_priority'),
+    Queue('mid_priority', Exchange('mid_priority'), routing_key='mid_priority'),
+    Queue('low_priority', Exchange('low_priority'), routing_key='low_priority')
+)
+app.conf.task_default_queue = 'default'
+app.conf.task_default_exchange = 'default'
+app.conf.task_default_routing_key = 'default'
