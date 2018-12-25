@@ -35,6 +35,7 @@ async def scan_db(conn):
     high_priority = now + timedelta(minutes=20)
     mid_priority = high_priority + timedelta(minutes=20)
     low_priority = mid_priority + timedelta(minutes=20)
+    #TODO:Try removing return statement from logging
     #TODO:Check for past 1 hour for confirmation.
     #TODO:Sort the certificates to be revoked in an hour based on their respective epoch and set priority.
     print ('hour from now', hour_from_now.date())
