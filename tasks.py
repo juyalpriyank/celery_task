@@ -89,10 +89,7 @@ async def task_status_logging(task_id, revoke_date):
     res = AsyncResult(task_id, app = app)
     logging.info('X----------X------------TASK----------------X-----------X')
     logging.info('Task has been registered with task id ' + str(task_id) + ' and will be excuted at ' + str(revoke_date))
-    while(res.state):
-        if res.state == 'SUCCESS':
-            logging.info('Task with task id ' + str(task_id) + ' has been successfully executed at ' + str(datetime.datetime.now()))
-            return
+    return
 
 def main():
     loop = asyncio.get_event_loop()

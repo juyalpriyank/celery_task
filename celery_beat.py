@@ -9,6 +9,9 @@ import logging
 from kombu import Queue, Exchange
 
 app = Celery('celery_beat', broker='amqp://guest:guest@localhost:5672//', backend='rpc://',CELERY_DEFAULT_QUEUE='high_priority',CELERY_QUEUES=(Queue('high_priority'),Queue('mid_priority'), Queue('low_priority')))
+
+logging.basicConfig(filename='beat.log', level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
+
 r.set_loop_type('asyncio')
 
 tz = pytz.timezone('Asia/Kolkata')
@@ -122,11 +125,7 @@ async def task_status_logging(task_id, revoke_date):
     res = AsyncResult(task_id, app = app)
     logging.info('X----------X------------TASK----------------X-----------X')
     logging.info('Task has been registered with task id ' + str(task_id) + ' and will be excuted at ' + str(revoke_date))
-    while(res.state):
-        if res.state == 'SUCCESS':
-            logging.info('Task with task id ' + str(task_id) + ' has been successfully executed at ' + str(datetime.now()))
-            return
-
+    return
 
 app.conf.beat_schedule = {
     "check-for-revoke-task": {
